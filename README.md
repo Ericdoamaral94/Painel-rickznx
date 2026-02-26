@@ -1,4 +1,4 @@
-# Painel-rickznx
+# Painel-rickznx 
 .splash{
   position:fixed;
   width:100%;
