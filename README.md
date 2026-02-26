@@ -1,5 +1,4 @@
 # Painel-rickznx
-Melhorar seu desempenho no Free Fire dando só capa!!!
 .splash{
   position:fixed;
   width:100%;
