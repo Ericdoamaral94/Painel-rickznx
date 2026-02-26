@@ -1,0 +1,275 @@
+import SwiftUI
+
+@main
+struct RickzadaApp: App {
+    @AppStorage("hasSeenOnboarding") var hasSeenOnboarding = false
+
+    var body: some Scene {
+        WindowGroup {
+            if hasSeenOnboarding {
+                ContentView()
+            } else {
+                OnboardingView()
+            }
+        }
+    }
+}import Foundation
+
+struct SensiConfig: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var geral: Int
+    var redDot: Int
+    var a4: Int
+    var sniper: Int
+    var dateCreated: Date = Date()
+    
+    static let `default` = SensiConfig(name: "Padrão", geral: 200, redDot: 220, a4: 140, sniper: 60)
+}import Foundation
+import Combine
+
+class ConfigStore: ObservableObject {
+    @Published var current: SensiConfig = .default
+    @Published var favorites: [SensiConfig] = []
+    
+    private let favoritesKey = "rickzada.favorites.v1"
+    
+    init() {
+        load()
+    }
+    
+    func applyPreset(_ preset: SensiConfig) {
+        current = preset
+    }
+    
+    func saveFavorite(_ name: String) {
+        var fav = current
+        fav.name = name
+        favorites.insert(fav, at: 0)
+        persist()
+    }
+    
+    func deleteFavorite(at offsets: IndexSet) {
+        favorites.remove(atOffsets: offsets)
+        persist()
+    }
+    
+    private func persist() {
+        if let data = try? JSONEncoder().encode(favorites) {
+            UserDefaults.standard.set(data, forKey: favoritesKey)
+        }
+    }
+    
+    private func load() {
+        if let data = UserDefaults.standard.data(forKey: favoritesKey),
+           let arr = try? JSONDecoder().decode([SensiConfig].self, from: data) {
+            favorites = arr
+        }
+    }
+}import SwiftUI
+import UIKit
+
+struct ContentView: View {
+    @StateObject private var store = ConfigStore()
+    @State private var showSaveAlert = false
+    @State private var saveName = ""
+    @State private var showShare = false
+    @State private var shareText = ""
+    @State private var selectedPreset: PresetType? = nil
+
+    enum PresetType {
+        case agressiva, equilibrada, controle
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 12) {
+                // Title + preview
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Rickzada — Auxílio de Mira")
+                        .font(.title2)
+                        .bold()
+                    Text("Ajuste sua sensibilidade e copie para o Free Fire.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Presets
+                HStack(spacing: 10) {
+                    PresetButton(title: "Agressiva") {
+                        let p = SensiConfig(name: "Agressiva", geral: 240, redDot: 260, a4: 120, sniper: 40)
+                        store.applyPreset(p)
+                        selectedPreset = .agressiva
+                        impact()
+                    }
+                    PresetButton(title: "Equilibrada") {
+                        let p = SensiConfig(name: "Equilibrada", geral: 200, redDot: 220, a4: 140, sniper: 60)
+                        store.applyPreset(p)
+                        selectedPreset = .equilibrada
+                        impact()
+                    }
+                    PresetButton(title: "Sniper") {
+                        let p = SensiConfig(name: "Sniper", geral: 150, redDot: 160, a4: 170, sniper: 90)
+                        store.applyPreset(p)
+                        selectedPreset = .controle
+                        impact()
+                    }
+                }
+
+                // Sliders
+                Group {
+                    LabeledSlider(title: "Geral", value: Binding(get: {
+                        Double(store.current.geral)
+                    }, set: { newVal in
+                        store.current.geral = Int(newVal)
+                    }), range: 100...300)
+                    LabeledSlider(title: "Red Dot / 2x", value: Binding(get: {
+                        Double(store.current.redDot)
+                    }, set: { newVal in
+                        store.current.redDot = Int(newVal)
+                    }), range: 100...300)
+                    LabeledSlider(title: "4x / ACOG", value: Binding(get: {
+                        Double(store.current.a4)
+                    }, set: { newVal in
+                        store.current.a4 = Int(newVal)
+                    }), range: 70...200)
+                    LabeledSlider(title: "Sniper", value: Binding(get: {
+                        Double(store.current.sniper)
+                    }, set: { newVal in
+                        store.current.sniper = Int(newVal)
+                    }), range: 20...120)
+                }
+                .padding(.top, 8)
+
+                // Preview box
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Preview").font(.headline)
+                    Text(previewText(store.current))
+                        .font(.system(.body, design: .monospaced))
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .cornerRadius(10)
+                }
+
+                // Actions
+                HStack {
+                    Button(action: copyToClipboard) {
+                        Label("Copiar config", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Button(action: { 
+                        shareText = previewText(store.current)
+                        showShare = true
+                    }) {
+                        Label("Compartilhar", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+                .padding(.top, 8)
+
+                // Favorites list
+                List {
+                    Section(header: Text("Favoritos")) {
+                        ForEach(store.favorites) { fav in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(fav.name).bold()
+                                    Text("G: \(fav.geral) • RD: \(fav.redDot) • 4x: \(fav.a4) • S: \(fav.sniper)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Button("Aplicar") {
+                                    store.applyPreset(fav)
+                                    impact()
+                                }
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        .onDelete(perform: store.deleteFavorite)
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .frame(height: 200)
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Configuração")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showSaveAlert = true }) {
+                        Image(systemName: "plus.circle")
+                    }
+                    .accessibilityLabel("Salvar como favorito")
+                }
+            }
+            .sheet(isPresented: $showShare) {
+                ActivityView(activityItems: [shareText])
+            }
+            .alert("Salvar favorito", isPresented: $showSaveAlert, actions: {
+                TextField("Nome do favorito", text: $saveName)
+                Button("Salvar") {
+                    let name = saveName.isEmpty ? "Favorito \(Date())" : saveName
+                    store.saveFavorite(name)
+                    saveName = ""
+                }
+                Button("Cancelar", role: .cancel) { saveName = "" }
+            }, message: {
+                Text("Digite um nome para salvar esta configuração.")
+            })
+        }
+    }
+
+    private func previewText(_ c: SensiConfig) -> String {
+        return """
+        Rickzada — Configuração
+        Geral: \(c.geral)
+        Red Dot/2x: \(c.redDot)
+        4x/ACOG: \(c.a4)
+        Sniper: \(c.sniper)
+        """
+    }
+
+    private func copyToClipboard() {
+        UIPasteboard.general.string = previewText(store.current)
+        impact()
+    }
+
+    private func impact() {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+    }
+}import SwiftUI
+
+struct OnboardingView: View {
+    @AppStorage("hasSeenOnboarding") var hasSeenOnboarding = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Text("Rickzada")
+                .font(.largeTitle)
+                .bold()
+            Text("Auxílio de Mira — Gere valores de sensibilidade para usar no Free Fire. Teste e ajuste ao seu estilo.")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+            Spacer()
+            Button(action: { hasSeenOnboarding = true }) {
+                Text("Começar")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding()
+        }
+        .padding()
+    }
+}
